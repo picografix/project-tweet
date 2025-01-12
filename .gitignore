@@ -1,6 +1,7 @@
 # Node modules
 node_modules/
-
+tweets.csv
+cookies.json
 # npm logs
 npm-debug.log*
 

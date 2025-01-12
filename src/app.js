@@ -3,7 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const twitterRoutes = require('./routes/twitter.routes');
 const gptRoutes = require('./routes/gpt.routes');
-const { defaultTwitterHandle } = require('./config');
+
 
 const app = express();
 
@@ -12,7 +12,7 @@ app.use(cors());
 app.use(express.json());
 
 // Set a default handle for convenience
-app.set('defaultTwitterHandle', defaultTwitterHandle);
+app.set('defaultTwitterHandle', "prodzshocker");
 
 // Routes
 app.use('/api/twitter', twitterRoutes);

@@ -1,51 +1,86 @@
+// import 'dotenv/config';
+const { config } = require('dotenv');
+const { Cookie } = require('tough-cookie');
 // src/services/twitter.service.js
 const { Scraper } = require('agent-twitter-client');
-
+const fs = require('fs');
+config();
 /**
  * A service class that mirrors the same functionality as the code using `twitter-api-v2`,
  * but internally uses `agent-twitter-client` for operations on X (Twitter).
  *
- * Make sure to configure environment variables or cookies for authentication.
- * (See the documentation for `agent-twitter-client` for details.)
+ * This version relies on cookies for authentication, which should be configured beforehand.
+ * If cookies are invalid, the service will log in the user and save new cookies.
  */
 class TwitterService {
   constructor() {
     // Create a scraper instance
     this.scraper = new Scraper();
-    // You might also want to log in immediately here, or call `init()` separately.
+
+    // Load cookies if available
+    this.cookiePath = process.env.TWITTER_COOKIE_PATH || 'cookies.json';
+    this.restoreCookies();
   }
 
   /**
-   * Optionally, call this to perform a login if you're not using cookies directly.
-   *
-   * Example environment variables needed:
-   *   TWITTER_USERNAME, TWITTER_PASSWORD,
-   *   TWITTER_API_KEY, TWITTER_API_SECRET_KEY,
-   *   TWITTER_ACCESS_TOKEN, TWITTER_ACCESS_TOKEN_SECRET
+   * Restore cookies from a file.
    */
-  async init() {
-    // For v1 (search, reading tweets)
-    // If you only need read-only, you might skip v2 credentials
-    await this.scraper.login(
-      process.env.TWITTER_USERNAME,
-      process.env.TWITTER_PASSWORD,
-      process.env.TWITTER_EMAIL,
-      process.env.TWITTER_2FA_SECRET
-    );
+  restoreCookies() {
+    try {
+      if (fs.existsSync(this.cookiePath)) {
+        const cookiesRaw = fs.readFileSync(this.cookiePath, 'utf8');
+        const cookieArray = JSON.parse(cookiesRaw);
+        const cookieObjects = cookieArray.map(json => Cookie.fromJSON(json));
+        this.scraper.setCookies(cookieObjects);
+        console.log('Cookies restored successfully.');
+      }
+    } catch (error) {
+      console.error('Error restoring cookies:', error);
+    }
+  }
 
+  /**
+   * Save cookies to a file.
+   */
+  async saveCookies() {
+    try {
+      const cookies = await this.scraper.getCookies();
+      fs.writeFileSync(this.cookiePath, JSON.stringify(cookies));
+      console.log('Cookies saved successfully.');
+    } catch (error) {
+      console.error('Error saving cookies:', error);
+    }
+  }
 
+  /**
+   * Login the user and save cookies.
+   */
+  async login() {
+    try {
+      await this.scraper.login(
+        process.env.TWITTER_USERNAME,
+        process.env.TWITTER_PASSWORD,
+        process.env.TWITTER_EMAIL,
+      );
+      console.log('Login successful. Saving cookies...');
+      await this.saveCookies();
+    } catch (error) {
+      console.error('Error during login:', error);
+      throw error;
+    }
+  }
 
-    // For v2 features (posting tweets, polls, advanced APIs):
-    // await this.scraper.login(
-    //   process.env.TWITTER_USERNAME,
-    //   process.env.TWITTER_PASSWORD,
-    //   process.env.TWITTER_EMAIL,
-    //   process.env.TWITTER_2FA_SECRET,
-    //   process.env.TWITTER_API_KEY,
-    //   process.env.TWITTER_API_SECRET_KEY,
-    //   process.env.TWITTER_ACCESS_TOKEN,
-    //   process.env.TWITTER_ACCESS_TOKEN_SECRET
-    // );
+  /**
+   * Ensure the scraper is authenticated, logging in if necessary.
+   */
+  async ensureAuthenticated() {
+    try {
+      this.restoreCookies();
+      console.log('Authentication verified.');
+    } catch (error) {
+      console.warn('Authentication failed. Logging in again...');
+      await this.login();
+    }
   }
 
   /**
@@ -56,6 +91,8 @@ class TwitterService {
    */
   async fetchLastXTweets(handle, count = 5) {
     try {
+      await this.ensureAuthenticated();
+
       // 1) Resolve the user ID from the handle
       const userId = await this.scraper.getUserIdByScreenName(handle);
 
@@ -82,6 +119,8 @@ class TwitterService {
    */
   async postTweet(text) {
     try {
+      await this.ensureAuthenticated();
+
       // Use the v2 API for creating tweets
       const tweet = await this.scraper.sendTweetV2(text);
       return tweet;
@@ -99,7 +138,9 @@ class TwitterService {
    */
   async postReply(tweetId, text) {
     try {
-      // pass the ID in as the 'replyToTweetId'
+      await this.ensureAuthenticated();
+
+      // Pass the ID in as the 'replyToTweetId'
       const replyTweet = await this.scraper.sendTweetV2(text, tweetId);
       return replyTweet;
     } catch (error) {
@@ -115,6 +156,8 @@ class TwitterService {
    */
   async fetchTweetById(tweetId) {
     try {
+      await this.ensureAuthenticated();
+
       const tweet = await this.scraper.getTweetV2(tweetId);
       return tweet;
     } catch (error) {
